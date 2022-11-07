@@ -9,16 +9,21 @@ import (
 
 // The style of keys.  If there is an input with two
 // nested keys "f" and "g", with "f" at the root,
-//    { "f": { "g": ... } }
+//
+//	{ "f": { "g": ... } }
+//
 // the output will be the concatenation
-//    f{Middle}{Before}g{After}...
+//
+//	f{Middle}{Before}g{After}...
+//
 // Any struct element may be blank.
 // If you use Middle, you will probably leave Before & After blank, and vice-versa.
 // See examples in flatten_test.go and the "Default styles" here.
 type SeparatorStyle struct {
-	Before string // Prepend to key
-	Middle string // Add between keys
-	After  string // Append to key
+	Before                      string // Prepend to key
+	Middle                      string // Add between keys
+	After                       string // Append to key
+	DoNotFlattenPrimitiveArrays bool   // Don't flatten arrays of primitives (numbers, strings, etc.)
 }
 
 // Default styles
@@ -86,16 +91,33 @@ func FlattenString(nestedstr, prefix string, style SeparatorStyle) (string, erro
 }
 
 func flatten(top bool, flatMap map[string]interface{}, nested interface{}, prefix string, style SeparatorStyle) error {
-	assign := func(newKey string, v interface{}) error {
-		switch v.(type) {
-		case map[string]interface{}, []interface{}:
-			if err := flatten(false, flatMap, v, newKey, style); err != nil {
-				return err
+	allPrimitives := func(arr []interface{}) bool {
+		for _, item := range arr {
+			switch item.(type) {
+			case string, int32, int64, float32, float64, json.Number:
+				continue
+			default:
+				return false
 			}
-		default:
-			flatMap[newKey] = v
+		}
+		return true
+	}
+
+	assign := func(newKey string, v interface{}) error {
+		shouldFlatten := false
+
+		switch v.(type) {
+		case []interface{}:
+			shouldFlatten = !(style.DoNotFlattenPrimitiveArrays && allPrimitives(v.([]interface{})))
+		case map[string]interface{}:
+			shouldFlatten = true
 		}
 
+		if shouldFlatten {
+			return flatten(false, flatMap, v, newKey, style)
+		}
+
+		flatMap[newKey] = v
 		return nil
 	}
 
